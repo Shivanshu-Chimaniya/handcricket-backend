@@ -1,4 +1,6 @@
-require("dotenv").config();
+if (process.env.NODE_ENV != "production") {
+	require("dotenv").config();
+}
 
 const express = require("express");
 const app = express();
@@ -11,7 +13,7 @@ const mongoose = require("mongoose");
 
 const io = new Server(server, {
 	cors: {
-		origin: "http://localhost:5173",
+		origin: process.env.FRONTENDURL,
 		methods: ["GET", "POST"],
 	},
 });
