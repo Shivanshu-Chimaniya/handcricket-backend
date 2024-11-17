@@ -1,3 +1,5 @@
+require("dotenv").config();
+
 const express = require("express");
 const app = express();
 const http = require("http");
@@ -18,8 +20,9 @@ const PORT = 3000;
 const cors = require("cors");
 const {Game} = require("./models/Game");
 
+let DB_URL = process.env.MONGOATLASURL;
 mongoose
-	.connect("mongodb://localhost:27017/handcricket")
+	.connect(DB_URL)
 	.then(async () => {
 		let res = await Game.deleteMany({});
 		console.log(
