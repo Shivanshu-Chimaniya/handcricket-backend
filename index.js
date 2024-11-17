@@ -57,9 +57,12 @@ io.on("connection", (socket) => {
 		try {
 			const game = new Game({
 				roomCode,
+				leader: socket.id,
 				players: [{name: playerName, socketId: socket.id}],
 				scores: [0, 0],
 				currBall: [-1, -1],
+				battingTurn: -1,
+				spans: [0, 0],
 			});
 			await game.save();
 			games[roomCode] = game;
@@ -76,9 +79,8 @@ io.on("connection", (socket) => {
 			game.players.push({name: playerName, socketId: socket.id});
 			await game.save();
 			socket.join(roomCode);
-			games[roomCode] = game;
-			// Emit to all players in the room that the player has joined
 			io.to(roomCode).emit("playerJoined", {game});
+		} else {
 		}
 	});
 
@@ -91,7 +93,6 @@ io.on("connection", (socket) => {
 
 	socket.on("playerTossMove", async ({roomCode, choice}) => {
 		const game = await Game.findOne({roomCode});
-
 		const p1 = game.players[0].socketId;
 		const p2 = game.players[1].socketId;
 
@@ -104,41 +105,65 @@ io.on("connection", (socket) => {
 		}
 
 		if (game.p1tossChoice === null || game.p2tossChoice === null) {
+			io.to(roomCode).emit("resetToss");
 			await game.save();
 			return;
 		}
-
 		if (
-			(game.p1tossChoice === "rocks" &&
+			(game.p1tossChoice === "rock" &&
 				game.p2tossChoice === "scissors") ||
-			(game.p1tossChoice === "paper" && game.p2tossChoice === "rocks") ||
+			(game.p1tossChoice === "paper" && game.p2tossChoice === "rock") ||
 			(game.p1tossChoice === "scissors" && game.p2tossChoice === "paper")
 		) {
 			game.battingTurn = 0;
 			await game.save();
-			io.to(roomCode).emit("tossWinner", {winnerId: p1});
+			io.to(roomCode).emit("tossWinner", {
+				winner: game.players[0],
+				p1choice: game.p1tossChoice,
+				p2choice: game.p2tossChoice,
+			});
 		} else if (game.p1tossChoice === game.p2tossChoice) {
+			let p1choice = game.p1tossChoice,
+				p2choice = game.p2tossChoice;
 			game.p1tossChoice = null;
 			game.p2tossChoice = null;
 			await game.save();
-			io.to(roomCode).emit("tossDraw");
+			io.to(roomCode).emit("tossDraw", {
+				winner: "Mika Singh",
+				p1choice,
+				p2choice,
+			});
 		} else if (
-			(game.p2tossChoice === "rocks" &&
+			(game.p2tossChoice === "rock" &&
 				game.p1tossChoice === "scissors") ||
-			(game.p2tossChoice === "paper" && game.p1tossChoice === "rocks") ||
+			(game.p2tossChoice === "paper" && game.p1tossChoice === "rock") ||
 			(game.p2tossChoice === "scissors" && game.p1tossChoice === "paper")
 		) {
 			game.battingTurn = 1;
 			await game.save();
-			io.to(roomCode).emit("tossWinner", {winnerId: p2});
+			io.to(roomCode).emit("tossWinner", {
+				winner: game.players[1],
+				p1choice: game.p1tossChoice,
+				p2choice: game.p2tossChoice,
+			});
 		} else {
 			console.log("what is rps?");
 		}
 		await game.save();
 	});
 
+	socket.on("reqStartHandCricket", async ({roomCode}) => {
+		const game = await Game.findOne({roomCode});
+		if (game.battingTurn === -1) return;
+		io.to(roomCode).emit("startHandCricket");
+	});
+
 	socket.on("playerMove", async ({roomCode, move}) => {
 		const game = await Game.findOne({roomCode});
+		if (!game) return;
+		if (game.isGameActive == false) {
+			console.log("game concluded!");
+		}
 
 		const p1 = game.players[0].socketId;
 		const p2 = game.players[1].socketId;
@@ -153,45 +178,77 @@ io.on("connection", (socket) => {
 
 		if (game.currBall[0] === -1 || game.currBall[1] === -1) {
 			await game.save();
+			io.to(roomCode).emit("resetMoves");
 			return;
+		}
+		let move1 = game.currBall[0];
+		let move2 = game.currBall[1];
+		let newObj = {player1: game.currBall[0], player2: game.currBall[1]};
+
+		if (game.isFirstInnings) {
+			game.firstInning.push(newObj);
+		} else {
+			game.secondInning.push(newObj);
 		}
 
 		if (game.currBall[0] === game.currBall[1]) {
 			//out
+			game.spans[game.battingTurn]++;
 			game.targetScore = game.scores[game.battingTurn];
 			game.battingTurn = game.battingTurn === 0 ? 1 : 0;
 			if (game.isFirstInnings) {
-				io.to(roomCode).emit("out", {target: game.targetScore});
+				game.isFirstInnings = false;
+				await game.save();
+
+				io.to(roomCode).emit("out", {
+					game,
+					move1: game.currBall[0],
+					move2: game.currBall[1],
+				});
 			} else {
 				if (
 					game.scores[game.battingTurn] ==
 					game.scores[(game.battingTurn + 1) % 2]
 				) {
-					io.to(roomCode).emit("gameover", {result: "draw"});
+					game.isGameActive = false;
+					await game.save();
+					io.to(roomCode).emit("gameover", {
+						result: "draw",
+						game,
+						move1: game.currBall[0],
+						move2: game.currBall[1],
+					});
 				} else {
-					io.to(roomCode).emit("gameover", {result: "allout"});
+					game.isGameActive = false;
+					await game.save();
+					io.to(roomCode).emit("gameover", {
+						result: "allout",
+						game,
+						move1: game.currBall[0],
+						move2: game.currBall[1],
+					});
 				}
 			}
-			game.isFirstInnings = false;
 		} else {
 			let runsScored = game.currBall[game.battingTurn];
 			game.scores[game.battingTurn] += runsScored;
-			if (game.isFirstInnings) {
-				game.firstInning.push(runsScored);
-				game.firstSpan++;
-			} else {
-				game.secondInning.push(runsScored);
-				game.secondSpan++;
+			game.spans[game.battingTurn] += 1;
+			if (!game.isFirstInnings) {
 				if (
 					game.scores[game.battingTurn] >
 					game.scores[(game.battingTurn + 1) % 2]
 				) {
-					io.to(roomCode).emit("gameover", {result: "chased"});
+					game.isGameActive = false;
+					await game.save();
+					io.to(roomCode).emit("gameover", {
+						result: "chased",
+						game,
+						move1: game.currBall[0],
+						move2: game.currBall[1],
+					});
 				}
 			}
 		}
-		let move1 = game.currBall[0];
-		let move2 = game.currBall[1];
 		game.currBall = [-1, -1];
 		await game.save();
 		io.to(roomCode).emit("updateGame", {game, move1, move2});
@@ -202,10 +259,16 @@ io.on("connection", (socket) => {
 
 		let games = await Game.find({});
 		for (let game of games) {
+			if (game.isGameActive == false) {
+				await Game.deleteOne({roomCode: game.roomCode});
+			}
 			if (game.players[0].socketId === socket.id) {
 				io.to(game.roomCode).emit("game_aborted");
 				await Game.deleteOne({roomCode: game.roomCode});
-			} else if (game.players[1].socketId === socket.id) {
+			} else if (
+				typeof game.players[1] != "undefined" &&
+				game.players[1].socketId === socket.id
+			) {
 				io.to(game.roomCode).emit("game_aborted");
 				await Game.deleteOne({roomCode: game.roomCode});
 			}
