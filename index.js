@@ -19,11 +19,13 @@ const io = new Server(server, {
 		credentials: true,
 	},
 });
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const cors = require("cors");
 
-let DB_URL = process.env.MONGOATLASURL;
-// let DB_URL = "mongodb://localhost:27017/handcricket";
+const {Game} = require("./models/game");
+
+// let DB_URL = process.env.MONGOATLASURL;
+let DB_URL = "mongodb://localhost:27017/handcricket";
 mongoose
 	.connect(DB_URL)
 	.then(async () => {
@@ -301,6 +303,6 @@ io.on("connection", (socket) => {
 	});
 });
 
-server.listen(3000, "0.0.0.0", () => {
-	console.log("listening on :3000");
+server.listen(PORT, "0.0.0.0", () => {
+	console.log(`listening on :${PORT}`);
 });
