@@ -17,12 +17,22 @@ const io = new Server(server, {
 		methods: ["GET", "POST"],
 	},
 });
-
 const PORT = 3000;
 const cors = require("cors");
-const {Game} = require("./models/Game");
 
-let DB_URL = process.env.MONGOATLASURL;
+// const io = new Server(server, {
+// 	cors: {
+// 		origin: "http://localhost:5173/",
+// 		methods: ["GET", "POST"],
+// 	},
+// });
+
+// const PORT = 3000;
+// const cors = require("cors");
+const {Game} = require("./models/game");
+
+// let DB_URL = process.env.MONGOATLASURL;
+let DB_URL = "mongodb://localhost:27017/handcricket";
 mongoose
 	.connect(DB_URL)
 	.then(async () => {
@@ -39,8 +49,9 @@ app.use(express.json());
 app.use(express.urlencoded({extended: true}));
 
 // Routes
-app.post("/api/create", gameController.createGame);
-app.post("/api/join", gameController.joinGame);
+app.get("/", (req, res) => {
+	res.json("connected");
+});
 app.get("/api/game/:roomCode", gameController.getGame);
 
 const games = {};
@@ -68,6 +79,8 @@ io.on("connection", (socket) => {
 				currBall: [-1, -1],
 				battingTurn: -1,
 				spans: [0, 0],
+				hasSeenResults: 0,
+				isFirstInning: true,
 			});
 			await game.save();
 			games[roomCode] = game;
@@ -96,6 +109,13 @@ io.on("connection", (socket) => {
 		}
 	});
 
+	socket.on("has-seen-results", async ({roomCode}) => {
+		const game = await Game.findOne({roomCode});
+		if (game.leader === socket.id) {
+			io.to(roomCode).emit("start-second-inning", {game});
+		}
+	});
+
 	socket.on("playerTossMove", async ({roomCode, choice}) => {
 		const game = await Game.findOne({roomCode});
 		const p1 = game.players[0].socketId;
@@ -120,7 +140,7 @@ io.on("connection", (socket) => {
 			(game.p1tossChoice === "paper" && game.p2tossChoice === "rock") ||
 			(game.p1tossChoice === "scissors" && game.p2tossChoice === "paper")
 		) {
-			game.battingTurn = 0;
+			game.tossWinner = 0;
 			await game.save();
 			io.to(roomCode).emit("tossWinner", {
 				winner: game.players[0],
@@ -144,7 +164,7 @@ io.on("connection", (socket) => {
 			(game.p2tossChoice === "paper" && game.p1tossChoice === "rock") ||
 			(game.p2tossChoice === "scissors" && game.p1tossChoice === "paper")
 		) {
-			game.battingTurn = 1;
+			game.tossWinner = 1;
 			await game.save();
 			io.to(roomCode).emit("tossWinner", {
 				winner: game.players[1],
@@ -157,9 +177,19 @@ io.on("connection", (socket) => {
 		await game.save();
 	});
 
-	socket.on("reqStartHandCricket", async ({roomCode}) => {
+	socket.on("player-wants-to", async ({roomCode, choice}) => {
 		const game = await Game.findOne({roomCode});
-		if (game.battingTurn === -1) return;
+		if (game.battingTurn !== -1) return;
+		if (socket.id !== game.players[game.tossWinner].socketId) return;
+		console.log(
+			game.players[game.tossWinner].name,
+			choice ? "wants Batting" : "wabts balling"
+		);
+		let isBattingTurn0 =
+			(game.tossWinner == 0 && choice) ||
+			(game.tossWinner == 1 && !choice);
+		game.battingTurn = isBattingTurn0 ? 0 : 1;
+		await game.save();
 		io.to(roomCode).emit("startHandCricket");
 	});
 
@@ -200,37 +230,45 @@ io.on("connection", (socket) => {
 			//out
 			game.spans[game.battingTurn]++;
 			game.targetScore = game.scores[game.battingTurn];
-			game.battingTurn = game.battingTurn === 0 ? 1 : 0;
+			// end of first inning.
 			if (game.isFirstInnings) {
+				game.battingTurn = game.battingTurn === 0 ? 1 : 0;
 				game.isFirstInnings = false;
+				game.currBall = [-1, -1];
 				await game.save();
 
 				io.to(roomCode).emit("out", {
 					game,
-					move1: game.currBall[0],
-					move2: game.currBall[1],
+					move1,
+					move2,
 				});
+				return;
 			} else {
+				// game ends
 				if (
 					game.scores[game.battingTurn] ==
 					game.scores[(game.battingTurn + 1) % 2]
 				) {
 					game.isGameActive = false;
+					game.gameWinner = -1;
+					game.currBall = [-1, -1];
 					await game.save();
 					io.to(roomCode).emit("gameover", {
 						result: "draw",
 						game,
-						move1: game.currBall[0],
-						move2: game.currBall[1],
+						move1,
+						move2,
 					});
 				} else {
 					game.isGameActive = false;
+					game.gameWinner = (game.battingTurn + 1) % 2;
+					game.currBall = [-1, -1];
 					await game.save();
 					io.to(roomCode).emit("gameover", {
 						result: "allout",
 						game,
-						move1: game.currBall[0],
-						move2: game.currBall[1],
+						move1,
+						move2,
 					});
 				}
 			}
@@ -239,17 +277,15 @@ io.on("connection", (socket) => {
 			game.scores[game.battingTurn] += runsScored;
 			game.spans[game.battingTurn] += 1;
 			if (!game.isFirstInnings) {
-				if (
-					game.scores[game.battingTurn] >
-					game.scores[(game.battingTurn + 1) % 2]
-				) {
+				if (game.scores[game.battingTurn] > game.targetScore) {
 					game.isGameActive = false;
+					game.gameWinner = game.battingTurn;
 					await game.save();
 					io.to(roomCode).emit("gameover", {
 						result: "chased",
 						game,
-						move1: game.currBall[0],
-						move2: game.currBall[1],
+						move1,
+						move2,
 					});
 				}
 			}
@@ -264,23 +300,21 @@ io.on("connection", (socket) => {
 
 		let games = await Game.find({});
 		for (let game of games) {
-			if (game.isGameActive == false) {
-				await Game.deleteOne({roomCode: game.roomCode});
+			if (game.isGameActive != false) {
+				if (game.players[0].socketId === socket.id) {
+					io.to(game.roomCode).emit("game_aborted");
+				} else if (
+					typeof game.players[1] != "undefined" &&
+					game.players[1].socketId === socket.id
+				) {
+					io.to(game.roomCode).emit("game_aborted");
+				}
 			}
-			if (game.players[0].socketId === socket.id) {
-				io.to(game.roomCode).emit("game_aborted");
-				await Game.deleteOne({roomCode: game.roomCode});
-			} else if (
-				typeof game.players[1] != "undefined" &&
-				game.players[1].socketId === socket.id
-			) {
-				io.to(game.roomCode).emit("game_aborted");
-				await Game.deleteOne({roomCode: game.roomCode});
-			}
+			await Game.deleteOne({roomCode: game.roomCode});
 		}
 	});
 });
 
-server.listen(3000, () => {
+server.listen(3000, "0.0.0.0", () => {
 	console.log("listening on :3000");
 });

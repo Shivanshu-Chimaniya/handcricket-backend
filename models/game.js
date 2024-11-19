@@ -35,9 +35,9 @@ const gameSchema = new mongoose.Schema(
 		players: [{name: String, socketId: String}],
 		p1tossChoice: {type: String, default: null},
 		p2tossChoice: {type: String, default: null},
-		tossWinner: {type: Number, default: null}, // 0 or 1
+		tossWinner: {type: Number, default: null}, //-1,  0 or 1
 
-		battingTurn: {type: Number, default: 0}, // 0 or 1
+		battingTurn: {type: Number, default: 0}, // -1,  0 or 1
 		firstInning: [{player1: {type: Number}, player2: {type: Number}}],
 		secondInning: [{player1: {type: Number}, player2: {type: Number}}],
 		spans: [{type: Number, default: 0}], // [0, 0]
@@ -45,6 +45,8 @@ const gameSchema = new mongoose.Schema(
 		targetScore: {type: Number, default: null},
 		currBall: [{type: Number, default: -1}], // [player1Score, player2Score]
 		scores: [{type: Number, default: 0}],
+		gameWinner: {type: Number, default: null},
+		hasSeenResults: {type: Number, default: 0},
 		isGameActive: {type: Boolean, default: true},
 	},
 	{timestamps: true}
