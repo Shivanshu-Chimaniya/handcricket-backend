@@ -31,8 +31,8 @@ const cors = require("cors");
 // const cors = require("cors");
 const {Game} = require("./models/game");
 
-// let DB_URL = process.env.MONGOATLASURL;
-let DB_URL = "mongodb://localhost:27017/handcricket";
+let DB_URL = process.env.MONGOATLASURL;
+// let DB_URL = "mongodb://localhost:27017/handcricket";
 mongoose
 	.connect(DB_URL)
 	.then(async () => {
