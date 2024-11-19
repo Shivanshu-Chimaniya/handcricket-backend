@@ -7,32 +7,23 @@ const app = express();
 const http = require("http");
 const server = http.createServer(app);
 const {Server} = require("socket.io");
+const mongoose = require("mongoose");
 
 const gameController = require("./controllers/game");
-const mongoose = require("mongoose");
+const {Game} = require("./models/game");
 
 const io = new Server(server, {
 	cors: {
-		origin: process.env.FRONTENDURL,
+		origin: "*",
 		methods: ["GET", "POST"],
+		credentials: true,
 	},
 });
 const PORT = 3000;
 const cors = require("cors");
 
-// const io = new Server(server, {
-// 	cors: {
-// 		origin: "http://localhost:5173/",
-// 		methods: ["GET", "POST"],
-// 	},
-// });
-
-// const PORT = 3000;
-// const cors = require("cors");
-const {Game} = require("./models/game");
-
-// let DB_URL = process.env.MONGOATLASURL;
-let DB_URL = "mongodb://localhost:27017/handcricket";
+let DB_URL = process.env.MONGOATLASURL;
+// let DB_URL = "mongodb://localhost:27017/handcricket";
 mongoose
 	.connect(DB_URL)
 	.then(async () => {
@@ -44,7 +35,7 @@ mongoose
 	.catch((err) => console.error("MongoDB connection error:", err));
 
 // express
-app.use(cors("*"));
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({extended: true}));
 
@@ -54,13 +45,12 @@ app.get("/", (req, res) => {
 });
 app.get("/api/game/:roomCode", gameController.getGame);
 
-const games = {};
-
 // Socket.io logic
 io.on("connection", (socket) => {
-	console.log(`User connected: ${socket.id}`);
+	// console.log(`User connected: ${socket.id}`);
 
 	socket.on("createGame", async ({playerName}) => {
+		console.log(`${playerName} wants to create a game!`);
 		const generateRoomCode = () =>
 			Math.random().toString(36).substring(2, 8).toUpperCase();
 		let roomCode = generateRoomCode();
@@ -83,7 +73,6 @@ io.on("connection", (socket) => {
 				isFirstInning: true,
 			});
 			await game.save();
-			games[roomCode] = game;
 			socket.join(roomCode);
 			socket.emit("gameCreated", {game});
 		} catch (err) {
@@ -181,10 +170,7 @@ io.on("connection", (socket) => {
 		const game = await Game.findOne({roomCode});
 		if (game.battingTurn !== -1) return;
 		if (socket.id !== game.players[game.tossWinner].socketId) return;
-		console.log(
-			game.players[game.tossWinner].name,
-			choice ? "wants Batting" : "wabts balling"
-		);
+
 		let isBattingTurn0 =
 			(game.tossWinner == 0 && choice) ||
 			(game.tossWinner == 1 && !choice);
@@ -296,7 +282,7 @@ io.on("connection", (socket) => {
 	});
 
 	socket.on("disconnect", async () => {
-		console.log(`User disconnected: ${socket.id}`);
+		// console.log(`User disconnected: ${socket.id}`);
 
 		let games = await Game.find({});
 		for (let game of games) {
