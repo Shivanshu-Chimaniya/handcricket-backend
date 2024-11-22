@@ -7,10 +7,6 @@ const app = express();
 const http = require("http");
 const server = http.createServer(app);
 const {Server} = require("socket.io");
-// const mongoose = require("mongoose");
-
-const gameController = require("./controllers/game");
-// const {Game} = require("./models/game");
 
 const io = new Server(server, {
 	cors: {
@@ -21,6 +17,8 @@ const io = new Server(server, {
 const PORT = process.env.PORT || 3000;
 const cors = require("cors");
 
+// const mongoose = require("mongoose");
+// const {Game} = require("./models/game");
 // let DB_URL = process.env.MONGOATLASURL;
 // let DB_URL = "mongodb://localhost:27017/handcricket";
 // mongoose
@@ -32,6 +30,7 @@ const cors = require("cors");
 // 		);
 // 	})
 // 	.catch((err) => console.error("MongoDB connection error:", err));
+// const gameController = require("./controllers/game");
 
 // express
 app.use(cors());
@@ -95,7 +94,10 @@ io.on("connection", (socket) => {
 	socket.on("create-new-game", async ({playerName}) => {
 		let roomCode = generateRoomCode();
 
-		while (games.roomCode !== undefined) roomCode = generateRoomCode();
+		while (games[roomCode] !== undefined) {
+			console.log("duplicate room: ", roomCode);
+			roomCode = generateRoomCode();
+		}
 
 		const game = generateNewGame({
 			roomCode,
@@ -242,7 +244,6 @@ io.on("connection", (socket) => {
 				game.battingTurn = game.battingTurn === 0 ? 1 : 0;
 				game.isFirstInnings = false;
 				game.currBall = [-1, -1];
-
 				io.to(roomCode).emit("out", {
 					game,
 					move1,
@@ -301,20 +302,19 @@ io.on("connection", (socket) => {
 		console.log(`User disconnected: ${socket.id}`);
 		for (let roomCode in games) {
 			let game = games[roomCode];
-
 			if (
-				typeof game.players[1] != "undefined" &&
+				typeof game.players[0] != "undefined" &&
 				game.players[0].socketId === socket.id
 			) {
-				io.to(game.roomCode).emit("GameAborted");
+				console.log("deleted: ", roomCode);
+				delete games.roomCode;
 			} else if (
 				typeof game.players[1] != "undefined" &&
 				game.players[1].socketId === socket.id
 			) {
-				io.to(game.roomCode).emit("GameAborted");
+				console.log("deleted: ", roomCode);
+				delete games.roomCode;
 			}
-			console.log("deleted: ", roomCode);
-			delete games.roomCode;
 		}
 	});
 });
