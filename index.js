@@ -81,7 +81,6 @@ const generateNewGame = ({roomCode, socketId, playerName}) => {
 		targetScore: -1,
 		isFirstInnings: true,
 		gameWinner: -1,
-		hasSeenResults: -1,
 
 		firstInning: [],
 		secondInning: [],
@@ -90,6 +89,7 @@ const generateNewGame = ({roomCode, socketId, playerName}) => {
 		currBall: [-1, -1], // [player1Score, player2Score]
 
 		isGameActive: true,
+		wantToRematch: 0,
 	};
 };
 
@@ -150,10 +150,14 @@ io.on("connection", (socket) => {
 		const p2 = game.players[1].socketId;
 
 		if (socket.id === p1) {
-			if (game.p1tossChoice !== -1) return;
+			if (game.p1tossChoice !== -1) {
+				return;
+			}
 			game.p1tossChoice = choice;
 		} else if (socket.id === p2) {
-			if (game.p2tossChoice !== -1) return;
+			if (game.p2tossChoice !== -1) {
+				return;
+			}
 			game.p2tossChoice = choice;
 		}
 
@@ -320,18 +324,48 @@ io.on("connection", (socket) => {
 					typeof game.players[1] != "undefined" &&
 					game.players[1].socketId === socket.id
 				) {
-					console.log("GameAborted");
+					console.log("active");
 					io.to(roomCode).emit("GameAborted");
-
 					console.log(game);
 					delete games.roomCode;
 				}
 			} else {
 				console.log("Not Active");
-
 				console.log(game);
 				delete games.roomCode;
 			}
+		}
+	});
+
+	socket.on("re-join-game", async ({roomCode}) => {
+		let game = games[roomCode];
+		game.wantToRematch++;
+		if (game.wantToRematch == 2) {
+			let players = game.players;
+			let leader = game.leader;
+			games[roomCode] = {
+				roomCode,
+				leader,
+				players,
+				p1tossChoice: -1,
+				p2tossChoice: -1,
+
+				tossWinner: -1, //-1,  0 or 1
+				battingTurn: -1, // -1,  0 or 1
+				targetScore: -1,
+				isFirstInnings: true,
+				gameWinner: -1,
+
+				firstInning: [],
+				secondInning: [],
+				spans: [0, 0], // [0, 0]
+				scores: [0, 0],
+				currBall: [-1, -1], // [player1Score, player2Score]
+
+				isGameActive: true,
+				wantToRematch: 0,
+			};
+			io.to(roomCode).emit("Rematch", {game: games[roomCode]});
 		}
 	});
 });
