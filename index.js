@@ -307,17 +307,29 @@ io.on("connection", (socket) => {
 		console.log(`User disconnected: ${socket.id}`);
 		for (let roomCode in games) {
 			let game = games[roomCode];
-			if (
-				typeof game.players[0] != "undefined" &&
-				game.players[0].socketId === socket.id
-			) {
-				console.log("deleted: ", roomCode);
-				delete games.roomCode;
-			} else if (
-				typeof game.players[1] != "undefined" &&
-				game.players[1].socketId === socket.id
-			) {
-				console.log("deleted: ", roomCode);
+			if (game.isGameActive === true) {
+				if (
+					typeof game.players[0] != "undefined" &&
+					game.players[0].socketId === socket.id
+				) {
+					console.log("active");
+					io.to(roomCode).emit("GameAborted");
+					console.log(game);
+					delete games.roomCode;
+				} else if (
+					typeof game.players[1] != "undefined" &&
+					game.players[1].socketId === socket.id
+				) {
+					console.log("GameAborted");
+					io.to(roomCode).emit("GameAborted");
+
+					console.log(game);
+					delete games.roomCode;
+				}
+			} else {
+				console.log("Not Active");
+
+				console.log(game);
 				delete games.roomCode;
 			}
 		}
