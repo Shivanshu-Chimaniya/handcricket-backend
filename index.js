@@ -10,7 +10,7 @@ const {Server} = require("socket.io");
 
 const io = new Server(server, {
 	cors: {
-		origin: "*",
+		origin: process.env.FRONTENDURL,
 		methods: ["GET", "POST"],
 	},
 });
@@ -33,7 +33,12 @@ const cors = require("cors");
 // const gameController = require("./controllers/game");
 
 // express
-app.use(cors());
+const corsOptions = {
+	origin: process.env.FRONTENDURL,
+	methods: ["GET", "POST"],
+};
+app.use(cors(corsOptions));
+
 app.use(express.json());
 app.use(express.urlencoded({extended: true}));
 
